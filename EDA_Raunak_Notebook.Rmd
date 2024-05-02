@@ -1,0 +1,701 @@
+---
+title: "EDA"
+author: "Raunak Sharma"
+date: "2024-05-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Home Credit Default Risk
+
+The objective of this notebook is to explore Home Credit dataset. In this we will try to understand the data set, the distribution of the target, and will evaluate the missing values.We will Also try to explore relationship between the target and some of the predictors.We will use the tidyverse packages like dplyr, ggplot2,skimr,janitor. 
+ 
+Overview:
+Limited credit history leaves many individuals struggling to secure loans, exposing them to unscrupulous lenders and perpetuating financial exclusion. Home Credit aims to address this issue by providing a positive and safe borrowing experience to this population, utilizing alternative data like telco and transactional information to predict repayment abilities accurately.
+
+Home Credit can tap into an untouched customer base, generating increased revenue. This predictive approach ensures that deserving clients are not rejected and facilitates informed lending decisions, while also generating more revenue by structuring loans with terms that empower clients for successful repayment leading to reduced loan defaults and empowering clients for successful repayment.
+
+# Steps 
+-loading data
+-Understanding Data 
+-Handling Missing Values 
+-Data Quality Check
+-Data Transformation
+-Finding Values of Predictors 
+-Correlation Analysis with Numerical Variables
+-Exploring Relationship Between Target and Predictors
+-Joining Transactional Data
+-Exploring Transactional Data
+
+
+# Description of the Data.
+The dataset contains 307511 observations and 122 columns for determining the Credit Default Risk.
+
+Brief description of the dataset is given below: 
+
+1. application_{train|test}.csv:information about loan applications, including details about the applicants, their financial status, and the loan terms.
+
+2. bureau.csv:this file has data from Credit Bureau about previous loans related to the applicants in the main dataset.
+
+3. bureau_balance.csv:It provides monthly data about the status of the loans reported to the Credit Bureau.
+
+4. POS_CASH_balance.csv:It contains monthly data about previous point-of-sale (POS) and cash loans.
+
+5. credit_card_balance.csv: This file contains monthly data about previous credit card balances and transactions.
+
+6. previous_application.csv: data about previous applications for loans from Home Credit.
+
+7. installments_payments.csv:information about previous installment payments made by applicants.
+
+These files contains numerous columns with specific information about the loans, applicants, and their financial history. These columns cover various aspects such as loan amounts, repayment history, credit bureau data, applicant demographics, and more.
+
+# Download and Inspect the data
+
+We can download the data from:- 
+https://www.kaggle.com/competitionshome-credit-default-risk/data.
+
+
+
+ 
+# Installing the libraries
+
+```{r}
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(skimr)
+library(janitor)
+library(pROC)
+library(readr)
+library(caret)
+library(psych)
+library(rpart)
+library(rpart.plot)
+library(rJava)
+library(RWeka)
+library(rminer)
+library(matrixStats)
+library(knitr)
+library(randomForest)
+
+
+```   
+
+
+# Setting working directory
+
+```{r setting working directory}
+
+Exploratory_Analysis <- getwd()
+setwd(Exploratory_Analysis)
+
+```
+
+
+# Loading data 
+
+```{r data import}
+
+train_data <- read.csv("application_train.csv")
+
+test_data <- read.csv("application_test.csv")
+
+```
+
+
+
+# Dimensions of train_data
+
+```{r data dim}
+
+dim(train_data)
+
+```
+
+
+
+# Distribution of the target variable
+
+```{r target distrb}
+
+# Checking the distribution of the target variable
+
+target_distribution <- table(train_data$TARGET) / nrow(train_data)
+print("Distribution of TARGET variable:")
+print(target_distribution)
+
+# Plotting the distribution
+barplot(target_distribution, main="Distribution of TARGET variable", 
+        xlab="TARGET", ylab="Proportion", 
+        col=c("steelblue", "steelblue"))
+
+```
+
+
+
+This shows that the distribution of Target Variable is unbalanced. Which Indicates that approximately 91.72% of the entries have a target value of 0 and 8.28% have a target value of 1. This shows that the majority of cases being in one class. These Imbalances are common in datasets related to events that are rare eg. Default on loans which the target represents.
+
+
+# Converting all character columns to factor
+
+## Inspecting Structure of data after factorization
+
+
+```{r}
+
+# Converting all character columns to factor variables in your data frame
+train_data <- train_data %>%
+  mutate(across(where(is.character), as.factor))
+
+print(str(train_data))
+
+```
+
+
+
+```{r train head}
+
+#inspecting train data for first 6 rows
+
+head(train_data)
+
+```
+
+
+```{r test head}
+
+#inspecting test data for first 6 rows
+
+head(test_data)
+
+```
+
+
+# Simple Majority Classifier
+
+Calculating Accuracy of Majority Class Classifier.
+
+```{r maj class}
+
+majority_class_accuracy <- max(target_distribution)
+print("Accuracy of Majority Class Classifier:")
+print(majority_class_accuracy)
+
+```
+
+# Handling Missing Data:
+
+# Data Quality Check and Imputing Missing Values
+
+```{r missing data count}
+
+#count the missing data
+count_missings <- function(x) sum(is.na(x))
+
+train_data %>% 
+  summarize_all(count_missings) 
+
+```
+
+count_missing function will count the missing data for various variables like NAME_CONTRACT_TYPE,CODE_GENDER, FLAG_OWN_CAR,FLAG_OWN_REALTY,CNT_CHILDREN etc. in the data set which can be understood by looking at data dictionary.To impute these missing values, we need to use the dplyr function replace.na().
+
+For the application_train, test and bureau data set,predictors TOTAL_INCOME,EMPLOYMENT_STATUS,OWN_REALTY,EDUCATION_LEVEL,AMT_CREDIT highlights superior features. As these factors often dictate relationship with TARGET their completeness assures accurate modeling.The variables which are crucial in predicting home credit default risk, aligning with objective of the company. Their comprehensive nature offers a strong foundation for a precise predictive model.
+
+
+# Calculating Rows and Columns with more than 50% missing Values.
+# Missing data summary  
+
+```{r}
+
+# Total number of rows and columns
+total_rows <- nrow(train_data)
+total_cols <- ncol(train_data)
+
+# Calculating the percentage of missing values in each column
+col_missing_percentage <- sapply(train_data, function(x) sum(is.na(x)) / total_rows * 100)
+
+# Columns with more than 50% missing values
+cols_over_50_missing <- names(which(col_missing_percentage > 50))
+
+# Printing columns with more than 50% missing values
+print("Columns with more than 50% missing values:")
+print(cols_over_50_missing)
+
+# Calculating the percentage of missing values in each row
+row_missing_percentage <- apply(train_data, 1, function(x) sum(is.na(x)) / total_cols * 100)
+
+# Rows with more than 50% missing values
+rows_over_50_missing <- which(row_missing_percentage > 50)
+
+# Printing the number of rows with more than 50% missing values
+print("Number of rows with more than 50% missing values:")
+print(length(rows_over_50_missing))
+
+
+```
+The above code shows missing data summary for Rows and Columns with more than 50% missing Values.The result shows that the "Number of rows with more than 50% missing values:" 0 and "Columns with more than 50% missing values: 37.
+
+
+# Calculating variance 
+
+Calculating variance for cols_over_50_missing.
+
+```{r var cal}
+
+# Function to calculate variance for a column
+calculate_variance <- function(col) {
+  non_missing_values <- col[!is.na(col)]
+  mean_value <- mean(non_missing_values)
+  variance <- sum((non_missing_values - mean_value)^2) / (length(non_missing_values) - 1)
+  return(variance)
+}
+
+# Calculate variance for each column
+variances <- sapply(train_data[, cols_over_50_missing], calculate_variance)
+
+# Print variances
+print("Variance :")
+print(variances)
+
+```
+
+
+```{r threshold for variance}
+
+# Define a threshold for low variance
+threshold <- 0.25 
+
+# Identify columns with low variances
+low_variance_cols <- names(variances[variances < threshold])
+
+# Print columns with low variances
+print(low_variance_cols)
+
+```
+
+
+The above result shows that the cols with missing values more than 50% i.e "cols_over_50_missing" also have low variances which indicates that they have minimal variability and potentially less useful information as they have variances close to zero. When we used threshold as 0.25 to predict the low variance the result showed  all "cols_over_50_missing" columns.Therefore,we can drop these columns as these are the columns where the values don't vary much across the dataset, indicating that they might not contain much useful information for modeling or analysis.
+
+
+
+# Dropping columns 
+
+Filtering out columns with less than or equal to 50% missing values and saving it new variable "train_data_1". Dropping the columns with more than 50% missing values i.e dropping these 37 columns.
+
+
+```{r col drop}
+
+# Total number of rows
+total_rows <- nrow(train_data)
+
+# Calculate proportion of missing values in each column
+col_missing_proportion <- colSums(is.na(train_data)) / total_rows
+
+# Columns with less than or equal to 50% missing values
+selected_columns <- names(col_missing_proportion[col_missing_proportion <= 0.5])
+
+# Subset the original data with selected columns
+train_data_1 <- subset(train_data, select = selected_columns)
+
+train_data_1
+
+```
+
+
+
+# Again calculating missing values
+
+
+```{r}
+
+# Calculating the percentage of missing data in each column
+missing_data_percentage <- train_data_1 %>%
+  summarise(across(everything(), ~sum(is.na(.))/n()*100))
+
+# Print the percentage of missing data per column
+print(missing_data_percentage)
+
+
+```
+
+We still have some columns with significant amount of missing values.
+
+# Replacing missing values in numeric columns with zero
+
+```{r}
+
+# Replacing missing values in numeric columns with zero
+train_data_1 <- train_data_1 %>%
+  mutate(across(where(is.numeric), ~ifelse(is.na(.), 0, .)))
+
+```
+
+
+# Replacing missing values in character columns with "missing"
+
+```{r}
+
+# Replacing missing values in character columns with "missing"
+train_data_1 <- train_data_1 %>%
+  mutate(across(where(is.character), ~ifelse(is.na(.), "missing", .)))
+
+```
+
+
+# Summary data after cleansing
+
+```{r}
+
+print(summary(train_data_1))
+
+```
+
+
+# Predictors with strong relationship with TARGET VARIABLE
+
+# [I] Correlation Analysis with Numerical Variables
+
+```{r corr analysis}
+# Predictors with strong relationship with TARGET VARIABLE
+
+# [I] Correlation Analysis with Numerical Variables
+
+# Selecting only numerical variables
+numerical_data <- train_data_1 %>% select_if(is.numeric)
+
+# Compute correlations with TARGET variable
+correlations <- cor(numerical_data)
+target_correlations <- correlations[,"TARGET"]
+
+# Take absolute values of correlations to give higher values for positive correlations
+abs_target_correlations <- abs(target_correlations)
+
+# Sort the absolute correlations to find the strongest predictors
+sorted_correlations <- sort(abs_target_correlations, decreasing = TRUE)
+
+# Print top 5 predictors
+print(head(sorted_correlations, 6)) # Including TARGET itself
+
+```
+
+Interpretation of the Output:
+
+TARGET: The correlation of TARGET with itself is, of course, 1.00. This is expected and just confirms that the correlation calculation is including TARGET as one of the variables.
+
+EXT_SOURCE_2: Shows a correlation coefficient of approximately -0.159. This indicates a moderate negative correlation with TARGET. Variables like EXT_SOURCE_2 and EXT_SOURCE_3 are often external ratings or scores that may inversely relate to the likelihood of a default (i.e., higher scores might mean lower risk).
+
+EXT_SOURCE_3: Similar to EXT_SOURCE_2, this variable has a correlation of about -0.120 with TARGET, also suggesting a negative correlation. This again implies that higher values in EXT_SOURCE_3 might be associated with a lower probability of default.
+
+DAYS_BIRTH: The correlation of about -0.078 indicates a slight negative correlation. This variable typically represents the age of the client in days (negative because it's usually recorded as days before the application). A negative correlation here suggests that older clients might have a lower probability of default.
+
+REGION_RATING_CLIENT_W_CITY and REGION_RATING_CLIENT: Both show smaller negative correlations with TARGET (-0.061 and -0.059 respectively). These might reflect some regional risk factors assessed by the credit institution.
+
+
+
+# Renaming columns
+
+```{r}
+
+train_data1 <- rename(train_data_1, 
+                      AGE_REGISTRATION = DAYS_BIRTH, 
+                      ID = DAYS_ID_PUBLISH, 
+                      GENDER = CODE_GENDER,
+                      TOTAL_INCOME = AMT_INCOME_TOTAL, 
+                      EMPLOYMENT_STATUS = NAME_INCOME_TYPE,
+                      EDUCATION_LEVEL = NAME_EDUCATION_TYPE,
+                            MOBILE = FLAG_MOBIL,
+                          WORK_PHONE = FLAG_WORK_PHONE,
+                               PHONE = FLAG_PHONE,
+                     CONTRACT_TYPE= NAME_CONTRACT_TYPE,
+                              EMAIL= FLAG_EMAIL,
+                              OWN_CAR= FLAG_OWN_CAR,
+                              OWN_REALTY=FLAG_OWN_REALTY,
+                         FAMILY_STATUS= NAME_FAMILY_STATUS,
+                           HOUSING_TYPE= NAME_HOUSING_TYPE,
+                        PHONE_OWNED_DAYS=DAYS_LAST_PHONE_CHANGE
+                      )
+train_data1
+
+```
+
+
+# Data Visualization 
+
+```{r}
+
+# For the first bar plot based on EMPLOYMENT_STATUS
+ggplot(train_data_1, aes(x = 'EMPLOYMENT_STATUS', fill = as.factor(TARGET))) +
+  geom_bar(position = position_dodge()) +
+  labs(x = "EMPLOYMENT STATUS", y = "Count") +
+  ggtitle("Bar Plot of TARGET by EMPLOYMENT STATUS") +
+  scale_fill_manual(values = c("steelblue", "steelblue"), 
+                    name = "TARGET",
+                    labels = c("0", "1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+Bar Plot of TARGET by EMPLOYMENT STATUS: The graph shows a significant discrepancy between TARGET categories based on employment status. For category "0", the count is approximately 200,000, indicating a dominant frequency. In contrast, category "1" has a much lower count, roughly around 20,000. This disparity highlights that being in employment status category "0" is far more common.
+
+
+```{r}
+# For the bar plot based on EDUCATION_LEVEL
+ggplot(train_data_1, aes(x = 'EDUCATION_LEVEL', fill = as.factor(TARGET))) +
+  geom_bar(position = position_dodge()) +
+  labs(x = "EDUCATION_LEVEL", y = "Count") +
+  ggtitle("Bar Plot of TARGET by EDUCATION_LEVEL") +
+  scale_fill_manual(values = c("steelblue", "steelblue"), 
+                    name = "TARGET",
+                    labels = c("0", "1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Bar Plot of TARGET by EDUCATION_LEVEL: In this graph, TARGET "0" again dominates with a count close to 200,000, compared to a much smaller number for TARGET "1", which is around 20,000. This pattern suggests that the majority of individuals, irrespective of their education level, fall into TARGET "0".
+
+
+
+```{r}
+# For the bar plot based on OCCUPATION_TYPE
+ggplot(train_data_1, aes(x = OCCUPATION_TYPE, fill = as.factor(TARGET))) +
+  geom_bar(position = position_dodge()) +
+  labs(x = "OCCUPATION_TYPE", y = "Count") +
+  ggtitle("Bar Plot of TARGET by OCCUPATION_TYPE ") +
+  scale_fill_manual(values = c("steelblue", "steelblue"), 
+                    name = "TARGET",
+                    labels = c("0", "1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+Bar Plot of TARGET by OCCUPATION_TYPE: The counts vary significantly across different occupations. The "Accounting" category shows the highest count for TARGET "0", around 75,000. Other occupations like IT, high skill tech staff, and laborers also have significant representations, generally in the range of 25,000 to 50,000 for TARGET "0". The representation of TARGET "1" is much lower, generally under 10,000 across various occupations.
+
+```{r}
+# For the bar plot based on OWN_REALTY
+ggplot(train_data_1, aes(x = 'OWN_REALTY', fill = as.factor(TARGET))) +
+  geom_bar(position = position_dodge()) +
+  labs(x = "OWN_REALTY", y = "Count") +
+  ggtitle("Bar Plot of TARGET by OWN_REALTY") +
+  scale_fill_manual(values = c("steelblue", "steelblue"), 
+                    name = "TARGET",
+                    labels = c("0", "1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+Bar Plot of TARGET by OWN_REALTY: This graph presents a count of about 200,000 for TARGET "0" individuals who own realty, compared to a much smaller count for those in TARGET "1", about 25,000. This indicates a strong correlation between owning realty and being categorized under TARGET "0".
+
+```{r}
+
+ggplot(train_data_1, aes(x = factor(TARGET), y = AMT_INCOME_TOTAL, fill = factor(TARGET))) +
+  geom_boxplot() +
+  labs(title = "Relationship between TARGET and TOTAL_INCOME",
+       x = "TARGET",
+       y = "TOTAL_INCOME") +
+  theme_minimal()
+
+
+```
+
+
+Box Plot of TOTAL_INCOME vs TARGET: The box plot displays a distribution of total income for two TARGET categories. For both categories "0" and "1", the bulk of the income data falls below 3,000,000, with the median income close to the lower quartile, indicating a skewed distribution towards lower income values. There are a few outliers, especially in TARGET "0", where incomes extend up to approximately 120,000,000, suggesting that a small fraction of individuals in this category have exceptionally high incomes. The TARGET "1" category also shows some outliers, but they are less pronounced compared to TARGET "0". This graph suggests that, generally, both categories have a similar income range for most individuals, with some extreme exceptions in the "0" category.
+
+
+
+
+
+
+# Creating a logistic regression model
+
+# Split data into training and testing sets
+
+```{r spliting data}
+
+# Split data into training and testing sets
+set.seed(123)  # for reproducibility
+training_indices <- sample(1:nrow(train_data_1), 0.8 * nrow(train_data))
+train <- train_data_1[training_indices, ]
+test <- train_data_1[-training_indices, ]
+
+```
+
+
+# Fit the logistic regression model
+
+```{r }
+# Fit the logistic regression model
+logistic_model <- glm(TARGET ~ ., family = binomial(link = "logit"), data = train)
+
+```
+
+
+#Summary of the model to view coefficients and statistical significance
+
+```{r}
+# Summary of the model to view coefficients and statistical significance
+summary(logistic_model)
+```
+
+
+# Predicting on the test set
+
+```{r}
+# Predicting on the test set
+predictions <- predict(logistic_model, newdata = test, type = "response")
+```
+
+# Confusion Matrix to evaluate model performance and Calculating accuracy
+
+```{r}
+
+# Convert probabilities to binary outcome based on a threshold of 0.5
+predicted_classes <- ifelse(predictions > 0.5, 1, 0)
+
+# Confusion Matrix to evaluate model performance
+table(Predicted = predicted_classes, Actual = test$TARGET)
+
+# Calculate accuracy
+accuracy <- mean(predicted_classes == test$TARGET)
+print(paste("Accuracy of the model: ", accuracy))
+
+
+```
+
+
+The confusion matrix and the reported accuracy provide key insights into the performance of your logistic regression model. Analyzing the confusion matrix:
+
+True Negatives (TN): 56,540 predictions correctly identified as class 0 (no event or default).
+False Positives (FP): 25 predictions were incorrectly identified as class 1 (event or default) when they were actually class 0.
+True Positives (TP): 18 predictions correctly identified as class 1.
+False Negatives (FN): 4,920 predictions were incorrectly identified as class 0 when they were actually class 1.
+From these values, we calculate the accuracy, which is 
+
+(TP+TN)/(TP+FP+TN+FN). In your model, this results in an accuracy of approximately 91.96%. This metric suggests that a high percentage of total predictions made by the model are correct.
+
+However, despite a seemingly high overall accuracy, the confusion matrix reveals a critical issue: the model is significantly better at predicting the majority class (class 0) than the minority class (class 1). With only 18 true positives versus 4,920 false negatives, the model struggles to correctly identify class 1 instances, indicating a high Type II error rate. This imbalance in predictive performance suggests the model is biased towards predicting non-events, which is a common problem in datasets with a large imbalance between classes.
+
+In conclusion, while the model demonstrates high accuracy, it is largely due to its performance on the majority class and does not indicate effectiveness across all categories. This issue of model bias needs addressing, potentially through techniques such as resampling the dataset to balance class distribution, adjusting the decision threshold, or employing different evaluation metrics like Precision, Recall, or the F1-score that give more insight into the balance of Type I and Type II errors. The significant discrepancy between the prediction of positive and negative classes should be a key focus for model improvement.
+
+
+# Joining Transactional Data:
+
+```{r}
+
+# Load related dataset
+bureau_data <- read.csv("bureau.csv")
+
+# Merge based on common key
+merged_data <- merge(train_data, bureau_data, by="SK_ID_CURR", all.x=TRUE)
+
+head(merged_data)
+
+
+```
+
+
+# Explore Joined Transaction Data:
+
+```{r}
+
+# Visualize relationships between added columns and the target variable
+plot(merged_data$"AMT_CREDIT_SUM", merged_data$TARGET, xlab="AMT_CREDIT_SUM)", ylab="TARGET", main="Relationship between AMT_CREDIT_SUM and TARGET")
+
+# Compute correlation coefficients
+correlation <- cor(merged_data$"AMT_CREDIT_SUM", merged_data$TARGET)
+print("Correlation coefficient between AMT_CREDIT_SUM and TARGET:")
+print(correlation)
+
+
+```
+
+The scatter plot shows that the chances of occuring loan default is lower with more no of outliers for low risk customers.AMT_CREDIT data shows that it was provided to customers who had lower risk to commit default.where target variable 0 shows low risk customers and 1 shows high risk customers.
+
+
+
+```{r}
+
+boxplot(AMT_CREDIT_SUM ~ TARGET, 
+        data = merged_data, 
+        main = "Box Plot of AMT_CREDIT_SUM by TARGET",
+        xlab = "TARGET", 
+        ylab = "AMT_CREDIT_SUM",
+        col = c("steelblue", "steelblue"))
+
+
+```
+
+The above two plots shows the same pattern for distribution of target variable as observed earlier. The boxplot shows central tendency and dispersion of AMT_CREDIT_SUM. It again shows that the chances of occuring loan default is lower with more no of outliers for low risk customers.AMT_CREDIT data shows that it was provided to customers who had lower risk to commit default.
+
+
+# Summary
+
+using skimr package to understand summary statistics.
+
+```{r}
+
+# Apply the skim() function 
+skimmed_data <- skim(train_data_1)
+
+# View the skimmed summary
+print(skimmed_data)
+
+```
+
+
+The above code gives a statistical summary of several variables from a dataset, related to Home credit default risk dataset. 
+The following provides summary for the same:
+
+SK_ID_CURR:
+An identifier for each record, showing a range from 100,002 to an unspecified maximum.
+The mean value is approximately 278,180, with a standard deviation (SD) of about 102,790, indicating variability in the ID numbers, possibly corresponding to the order or time of registration.
+
+TARGET:
+This is a binary variable (0 or 1), with a mean of 0.0807, suggesting that about 8.07% of the entries represent '1's (possibly defaults on a loan).
+The standard deviation is 0.272, which aligns with the binary nature of the data.
+
+CNT_CHILDREN:
+Indicates the number of children, with an average of approximately 0.42 per applicant and a standard deviation of 0.722.
+The distribution is skewed, with 75% of the data having 0 or 1 child.
+
+AMT_INCOME_TOTAL:
+Reflects the total income, with an average of 168,797.9 and a high variability as evidenced by the SD of 237,123.
+The range is from 25,650 to an unspecified maximum, indicating significant income disparity among applicants.
+
+AMT_CREDIT:
+The total credit amount is on average 599,026, with a SD of 402,490.8, suggesting a wide range in the sizes of loans or credits issued.
+The 25th percentile is 270,000, indicating that a quarter of the credits are below this amount.
+
+AMT_ANNUITY:
+The average annuity amount is 27,107.52 with a standard deviation of 14,494.44.
+This indicates regular payment amounts that vary significantly among different credits or loans.
+
+AMT_GOODS_PRICE:
+The average goods price for which the loan is taken is 537,909.5, with a standard deviation of 369,633.8.
+This shows high variability in the price of goods associated with the loans, ranging from very low to high values.
+
+REGION_POPULATION_RELATIVE:
+A measure of population density relative to the region, averaged at 0.0209 with a SD of 0.0138.
+The values range from 0.00029 to an unspecified maximum, suggesting varying degrees of urbanization.
+
+DAYS_BIRTH:
+Indicates the age of the client in days at the time of application, averaged at -16,037, which when converted to years (divide by -365), suggests an average age of about 44 years.
+
+The data ranges from approximately 69 years to 21 years old (using the 25th and maximum values), highlighting a broad age distribution.
+
+DAYS_EMPLOYED:
+Reflects the number of days the applicant has been employed, with an average significantly affected by extreme values, as shown by a mean of 63,815 and a very high standard deviation.
+
+The negative values for employment duration suggest data that likely need cleaning or transformation, as negative employment duration doesn't make practical sense unless indicating unemployment or similar statuses.
+
+Each variable provides insights into the demographic and financial characteristics of the applicants, valuable for risk assessments or financial product design. However, some data, like DAYS_EMPLOYED, may require further investigation or preprocessing to address anomalies or errors.
+
+
+
+
+
