@@ -1,0 +1,723 @@
+---
+title: "EDA_Modifications"
+author: "Raunak Sharma"
+date: "March 26, 2024"
+output: 
+  html_document:
+    number_sections: yes
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+## Home Credit Default Risk
+
+The objective of this notebook is to explore Home Credit dataset. In this we will try to understand the data set, the distribution of the target, and will evaluate the missing values.We will Also try to explore relationship between the target and some of the predictors.We will use the tidyverse packages like dplyr, ggplot2,skimr,janitor. 
+ 
+Overview:
+Limited credit history leaves many individuals struggling to secure loans, exposing them to unscrupulous lenders and perpetuating financial exclusion. Home Credit aims to address this issue by providing a positive and safe borrowing experience to this population, utilizing alternative data like telco and transactional information to predict repayment abilities accurately.
+
+# Steps 
+-load data
+-Understanding Data 
+-Handling Missing Values 
+-Data Quality Check
+-Data Transformation
+-Finding Values of Predictors 
+->Correlation Analysis with Numerical Variables
+->Running Chi-Square test for Categorical data
+-Exploring Relationship Between Target and Predictors
+-Joining Transactional Data
+-Exploring Transactional Data
+
+
+# Description of the Data.
+The dataset contains 307511 observations and 122 columns for determining the Credit Default Risk.
+
+Brief description of the dataset is given below: 
+
+1. application_{train|test}.csv:information about loan applications, including details about the applicants, their financial status, and the loan terms.
+
+2. bureau.csv:this file has data from Credit Bureau about previous loans related to the applicants in the main dataset.
+
+3. bureau_balance.csv:It provides monthly data about the status of the loans reported to the Credit Bureau.
+
+4. POS_CASH_balance.csv:It contains monthly data about previous point-of-sale (POS) and cash loans.
+
+5. credit_card_balance.csv: This file contains monthly data about previous credit card balances and transactions.
+
+6. previous_application.csv: data about previous applications for loans from Home Credit.
+
+7. installments_payments.csv:information about previous installment payments made by applicants.
+
+These files contains numerous columns with specific information about the loans, applicants, and their financial history. These columns cover various aspects such as loan amounts, repayment history, credit bureau data, applicant demographics, and more.
+
+# Download and Inspect the data
+
+We can download the data from:- 
+https://www.kaggle.com/competitionshome-credit-default-risk/data.
+
+
+# installing the libraries
+
+```{r}
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(skimr)
+library(janitor)
+library(pROC)
+
+library(caret)
+library(psych)
+library(rpart)
+library(rpart.plot)
+library(rJava)
+library(RWeka)
+library(rminer)
+library(matrixStats)
+library(knitr)
+library(lightgbm)
+
+```  
+
+
+
+# Loading data 
+
+```{r}
+
+train_data <- read.csv("application_train.csv")
+
+test_data <- read.csv("application_test.csv")
+
+```
+
+
+
+# Dimensions of train_data
+
+```{r}
+
+dim(train_data)
+
+```
+
+
+This shows that number of observations in the train_data set are 307511 and number of variables in the data set are 122.
+
+
+```{r}
+
+# Checking the distribution of the target variable
+
+target_distribution <- table(train_data$TARGET) / nrow(train_data)
+print("Distribution of TARGET variable:")
+print(target_distribution)
+
+# Plotting the distribution
+barplot(target_distribution, main="Distribution of TARGET variable", 
+        xlab="TARGET", ylab="Proportion", 
+        col=c("pink", "purple"))
+
+```
+
+
+This shows that the distribution of Target Variable is imbalanced. Which Indicates that approximately 91.72% of the entries have a target value of 0 and 8.28% have a target value of 1. This shows that the majority of cases being in one class. These Imbalances are common in datasets related to events that are rare eg. Default on loans which the target represents.
+
+
+```{r}
+#inspecting structure of train data.
+
+str(train_data)
+
+```
+
+
+
+```{r}
+
+summary(train_data)
+
+```
+
+
+
+
+
+```{r}
+
+#inspecting train data for first 6 rows
+
+head(train_data)
+
+```
+
+
+```{r}
+
+#inspecting test data for first 6 rows
+
+head(test_data)
+
+```
+
+# Simple Majority Classifier
+
+Calculating Accuracy of Majority Class Classifier.
+
+```{r}
+
+majority_class_accuracy <- max(target_distribution)
+print("Accuracy of Majority Class Classifier:")
+print(majority_class_accuracy)
+
+```
+
+# Handling Missing Data:
+
+# Data Quality Check and Imputing Missing Values
+
+```{r}
+
+#count the missing data
+count_missings <- function(x) sum(is.na(x))
+
+train_data %>% 
+  summarize_all(count_missings) 
+
+```
+
+count_missing function will count the missing data for various variables like NAME_CONTRACT_TYPE,CODE_GENDER, FLAG_OWN_CAR,FLAG_OWN_REALTY,CNT_CHILDREN etc. in the data set which can be understood by looking at data dictionary.To impute these missing values, we need to use the dplyr function replace.na().
+
+For the application_train, test and bureau data set,predictors TOTAL_INCOME,EMPLOYMENT_STATUS,OWN_REALTY,EDUCATION_LEVEL,AMT_CREDIT highlights superior features. As these factors often dictate relationship with TARGET their completeness assures accurate modeling.The variables which are crucial in predicting home credit default risk, aligning with objective of the company. Their comprehensive nature offers a strong foundation for a precise predictive model.
+
+
+
+# Data modeling 
+
+# Plots
+
+
+```{r}
+
+ggplot(train_data, aes(x = factor(TARGET), y = 'AMT_INCOME_TOTAL', fill = factor(TARGET))) +
+  geom_boxplot() +
+  labs(title = "Relationship between TARGET and AMT_INCOME_TOTAL",
+       x = "TARGET",
+       y = "AMT_INCOME_TOTAL") +
+  theme_minimal()
+
+
+```
+
+
+the above boxplot provides a visual summary of the central tendency and dispersion of TOTAL_INCOME within each category of TARGET. It shows relationship between Target and TOTAL_INCOME. Where we plotted a boxplot between the Two. Where 0 i.e no default has more outliers than default data.This also shows that chances of default happen to occur where Total income happens to be low and outlier data shows one instance where it happens to be very high.Whereas for income group where the income happens to be sustainable there chances of occurance of default is low. 
+
+
+```{r}
+
+ggplot(train_data, aes(x = AMT_INCOME_TOTAL, y = TARGET)) +
+  geom_point() +
+  scale_x_continuous(labels = scales::comma) +  
+  labs(x = "TOTAL_INCOME", y = "TARGET") +
+  ggtitle("Scatter Plot of TOTAL_INCOME vs TARGET")
+
+```
+
+
+
+The above scatter plot shows relationship between Target and TOTAL_INCOME. Where we plotted a boxplot between the Two. Where 0 i.e no default has more outliers than default data.This also shows that chances of default happen to occur where Total income happens to be low and outlier data shows one instance where it happens to be very high.
+where target variable 0 shows low risk customers and 1 shows high risk customers.
+
+
+
+
+
+
+```{r}
+
+# Creating a bar plot
+ggplot(train_data, aes(x = NAME_INCOME_TYPE, fill = as.factor(TARGET))) +
+  geom_bar(position = position_dodge()) +
+  labs(x = "INCOME_TYPE", y = "Count") +
+  ggtitle("Bar Plot of TARGET by INCOME_TYPE") +
+  scale_fill_manual(values = c("pink", "purple"), 
+                    name = "TARGET",
+                    labels = c("0", "1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+```
+
+
+
+
+The above bar plot shows the distribution of target variable between several groups. It shows that for each group frequency of default is low. However for working group it is still higher than the rest. where target variable 0 shows low risk customers and 1 shows high risk customers.
+
+
+```{r}
+
+ggplot(train_data, aes(x = NAME_EDUCATION_TYPE, fill = as.factor(TARGET))) +
+  geom_bar(position = position_dodge()) +
+  labs(x = "EDUCATION_TYPE", y = "Count") +
+  ggtitle("Bar Plot of TARGET by EDUCATION_TYPE") +
+  scale_fill_manual(values = c("orange", "purple"), 
+                    name = "TARGET",
+                    labels = c("0", "1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+
+```
+
+
+The above bar plot shows the distribution of target variable between several groups.where target variable 0 shows low risk customers and 1 shows high risk customers.It shows that for each group frequency of default is low. However for group with education level till Secondary level it is significantly higher than the rest group. It also shows that it is extremely low for people with lower secondary level as they tend to get financially excluded due to their status and education level to secure loans. The above plot also shows that people who belong to Higher education group their count to secure loan is on the lower side.
+
+
+
+```{r}
+
+ggplot(train_data, aes(x = OCCUPATION_TYPE, fill = as.factor(TARGET))) +
+  geom_bar(position = position_dodge()) +
+  labs(x = "OCCUPATION_TYPE", y = "Count") +
+  ggtitle("Bar Plot of TARGET by OCCUPATION_TYPE ") +
+  scale_fill_manual(values = c("skyblue", "purple"), 
+                    name = "TARGET",
+                    labels = c("0", "1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+
+```
+
+
+The above bar plot shows the distribution of our TARGET variable based on the occupation type between various groups.where target variable 0 shows low risk customers and 1 shows high risk customers. This shows that max number of loans were given to accountants. The groups which belong to the lower income category like low skil laborers,security staff, waiters, barmen staff they were given loans in less numbers as compared to high skilled occupation types. Also the chances to occur loan default is usually lower for all the groups.
+
+
+
+```{r}
+
+ggplot(train_data, aes(x = FLAG_OWN_REALTY, fill = as.factor(TARGET))) +
+  geom_bar(position = position_dodge()) +
+  labs(x = "OWN_REALTY", y = "Count") +
+  ggtitle("Bar Plot of TARGET by OWN_REALTY") +
+  scale_fill_manual(values = c("skyblue", "purple"), 
+                    name = "TARGET",
+                    labels = c("0", "1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+```
+
+
+The above bar plot shows the relationship between distribution of TARGET variable for groups who Own property or real estate.where target variable 0 shows low risk customers and 1 shows high risk customers.
+It shows that the loan disbursed to individuals who Own real estate is more than for individuals who don't own property. Also their chances to commit default is significantly lower as they have capital and understand asset management.Though instances to commit default is lower for both the groups irrespective of whether they own property or not. 
+
+
+
+# Data Preprocessing for Machine Learning: Converting Categorical Variables to Numeric
+
+## Converting categorical data to numeric
+
+```{r}
+
+#library(dplyr)     
+#library(purrr)
+
+# Function to convert factors and characters to numeric
+convert_to_numeric <- function(df) {
+  df %>%
+    mutate(across(where(~is.factor(.) | is.character(.)), ~as.numeric(as.factor(.))))
+}
+
+# Apply the function to train and test data
+train_data2 <- train_data %>%
+  select(-TARGET) %>%
+  convert_to_numeric()
+
+train_data2$TARGET <- as.factor(train_data$TARGET)
+
+test_data2 <- test_data %>% 
+  convert_to_numeric()
+
+```
+
+
+This code performs data preprocessing tasks by converting categorical variables (both factors and characters) into numeric format using a custom function `convert_to_numeric`. It then applies this function to both the training and test datasets, and finally reassigns the TARGET variable as a factor in the training dataset.
+
+
+
+# Training an XGBoost Model for Binary Classification
+
+
+
+```{r}
+
+library(xgboost)               
+
+# Ensuring that the TARGET is binary and converting it to numeric
+train_data2$TARGET <- as.factor(train_data2$TARGET)
+train_data2$TARGET <- as.numeric(levels(train_data2$TARGET))[train_data2$TARGET]
+
+# Preparing the data for XGBoost
+train_matrix <- as.matrix(train_data2[, setdiff(names(train_data2), "TARGET")])
+dtrain <- xgb.DMatrix(data = train_matrix, label = train_data2$TARGET)
+
+# Defining XGBoost parameters
+params <- list(
+    booster = "gbtree",
+    objective = "binary:logistic",
+    eta = 0.01,
+    max_depth = 9,
+    min_child_weight = 3,
+    subsample = 0.8,
+    colsample_bytree = 0.7,
+    gamma = 1
+)
+
+# Number of boosting rounds
+nrounds <- 200
+
+# Setting seed for reproducibility
+set.seed(123)
+
+# Train the XGBoost model
+xgb_model <- xgb.train(
+    params = params,
+    data = dtrain,
+    nrounds = nrounds,
+    watchlist = list(train = dtrain),
+    eval_metric = "auc"
+)
+
+# Output the model
+xgb_model
+
+```
+
+This code trains an XGBoost model for binary classification. It first converts the TARGET variable to a factor and then to numeric format, preparing the data for XGBoost training. The XGBoost parameters are defined, including the booster type, objective function, learning rate, tree depth, and other hyperparameters. The model is trained using the xgb.train() function with the specified parameters, and the trained model object xgb_model is outputted.
+
+The training process of the XGBoost model involved 200 iterations. Starting with an AUC of 0.705393 at the first iteration, the model steadily improved its performance over subsequent iterations. By the 200th iteration, the AUC on the training dataset reached 0.804128. Throughout the training, various callbacks were employed, including printing evaluation results and logging evaluations, to monitor the training progress. The model was trained with parameters such as a learning rate ('eta') of 0.01, maximum depth ('max_depth') of 9, and minimum child weight ('min_child_weight') of 3, among others.
+
+The learning rate ('eta') in XGBoost controls the step size during the optimization process, affecting the influence of each tree added to the model. Other parameters like 'max_depth' regulate the maximum depth of each tree, controlling its complexity and ability to capture interactions in the data.
+
+The 'min_child_weight' parameter in XGBoost determines the minimum amount of data needed in each child node (part of the tree) during the training process. If a potential split results in a child node with fewer samples than this minimum weight, the split is not allowed. This helps prevent the algorithm from creating overly complex trees that might fit the training data too closely, which could lead to poorer performance on new, unseen data. Essentially, it helps to control the complexity of the tree.
+
+# Generating Predictions and Creating Solution DataFrame using trained XGBoost model
+
+
+```{r}
+                                                   
+# Convert test data to matrix
+test_matrix <- as.matrix(test_data2)
+
+# Create the xgb.DMatrix object for test data
+dtest <- xgb.DMatrix(data = test_matrix)
+
+# Make predictions
+predictions <- predict(xgb_model, dtest, ntreelimit = 0, missing = NA)
+
+# Saving the solution to a dataframe
+solution <- data.frame('SK_ID_CURR' = as.integer(test_data$SK_ID_CURR), 'TARGET' = predictions)
+
+head(solution)
+
+```
+
+This code utilizes a pre-trained XGBoost model to predict the probabilities of positive class membership for test dataset observations. The resulting output, reveals SK_ID_CURR along with predicted TARGET probabilities. For example, the first observation (SK_ID_CURR = 100001) has a predicted probability of approximately 0.118, suggesting a moderate likelihood of being in the positive class. Conversely, for SK_ID_CURR = 100038, the predicted probability is notably higher at around 0.189, indicating a stronger likelihood of positive class membership. These probabilities offer insights into the classification of individuals and aid in decision-making processes.
+
+
+
+
+# Exporting Predictions to CSV File
+
+```{r}
+
+write.csv(solution, 'xgb_model.csv', row.names = F)       
+
+```
+
+
+
+
+# Data Preprocessing and Preparation for Modeling
+
+
+# case 1 when we dont drop the columns
+
+we get more accuracy when simply replace NAs in num var with zero. auc = 0.76052
+
+```{r}
+
+# Existing code
+train <- train_data
+test <- test_data
+
+full <- bind_rows(train, test)
+
+Target <- train$TARGET
+Id <- test$SK_ID_CURR
+full[, c('SK_ID_CURR', 'TARGET')] <- NULL
+
+chr <- full[, sapply(full, is.character)]
+num <- full[, sapply(full, is.numeric)]
+
+chr[is.na(chr)] <- "Not Available"
+
+# Updated part
+fac <- chr %>% 
+  lapply(as.factor) %>% 
+  as_tibble() # Changed from as_data_frame() to as_tibble()
+
+full <- bind_cols(fac, num)
+rm(chr, fac, num)
+
+full[is.na(full)] <- 0
+
+num <- train[, sapply(train, is.numeric)]
+
+rm(train, test)
+
+train <- full[1:length(Target),]
+test <- full[(length(Target) + 1):nrow(full),]
+
+
+```
+
+
+This code combines the train and test datasets, separates the target variable and ID column, converts categorical variables to factors, and replaces missing values with "Not Available" for character variables and 0 for numeric variables. Finally, it splits the combined dataset back into train and test sets.
+This preprocessing step ensures that the dataset is ready for further analysis or modeling by handling missing values appropriately without discarding entire rows or columns.
+
+
+# data split
+
+```{r}
+
+set.seed(123)
+inTrain <- createDataPartition(Target, p=.9, list = F)
+
+train_input <- train[inTrain,]
+valid_input <- train[-inTrain,]
+
+train_target <- Target[inTrain]
+valid_target <- Target[-inTrain]
+
+```
+
+
+
+
+```{r}
+
+lgb.train <- lgb.Dataset(data.matrix(train_input), label = train_target)
+lgb.valid <- lgb.Dataset(data.matrix(valid_input), label = valid_target)
+
+# Adjusted parameters for maximum accuracy
+params.lgb <- list(
+  objective = "binary",
+  metric = "auc",  # Change metric to binary_error for accuracy
+  min_data_in_leaf = 10,    # Increase min_data_in_leaf for more robustness against noise
+  min_sum_hessian_in_leaf = 50,  # Decrease min_sum_hessian_in_leaf for more aggressive splitting
+  feature_fraction = 1,   # Keep feature_fraction as is
+  bagging_fraction = 1,   # Keep bagging_fraction as is
+  bagging_freq = 0,         # Increase bagging_freq for more randomness
+  learning_rate = 0.01,      # Increase learning_rate for faster convergence
+  num_leaves = 15,          # Increase num_leaves for more complex trees
+  num_threads = 2           # Keep num_threads as is
+)
+
+# Train the LightGBM model with validation dataset
+lgb.model <- lgb.train(
+  params = params.lgb,
+  data = lgb.train,
+  valids = list(val = lgb.valid),  # Specify validation dataset
+  nrounds = 3000,
+  early_stopping_rounds = 200,
+  eval_freq = 50
+)
+
+```
+
+
+# Making Predictions with LightGBM Model
+
+
+```{r}
+
+# make test predictions
+lgb_pred <- predict(lgb.model, data.matrix(test), num_iteration = lgb.model$best_iter)
+
+result <- data.frame(SK_ID_CURR = Id, TARGET = lgb_pred)
+
+print(result)
+
+write.csv(result, "LGBM.csv", row.names = FALSE)
+
+```
+
+
+The result provides the predicted target probabilities for each individual in the test dataset, identified by their unique SK_ID_CURR. For instance, the individual with SK_ID_CURR 100001 has a predicted target probability of approximately 0.037, while the individual with SK_ID_CURR 100005 has a predicted target probability of around 0.128. These probabilities might indicate the likelihood of an individual belonging to the positive class (e.g., default) or the negative class (e.g., non-default).
+
+
+# case 2 when we drop columns with over 50% missing values and then convert change categorical and numeric variables than we get lower value of auc compared to case 1 i.e auc:0.755362.
+
+```{r}
+
+# Existing code
+train <- train_data
+test <- test_data
+
+full <- bind_rows(train, test)
+
+# Store the target variable
+Target <- train$TARGET
+
+# Store the ID column for the test dataset
+Id <- test$SK_ID_CURR
+
+# Remove SK_ID_CURR and TARGET columns
+full[, c('SK_ID_CURR', 'TARGET')] <- NULL
+
+# Calculate the percentage of missing values in each column
+missing_percent <- colMeans(is.na(full)) * 100
+
+# Identify columns with more than 50% missing values
+cols_to_drop <- names(missing_percent[missing_percent > 50])
+
+# Remove columns with more than 50% missing values
+full <- full[, !(names(full) %in% cols_to_drop)]
+
+# Extract character columns
+chr <- full[, sapply(full, is.character)]
+
+# Replace missing values in character columns with NA
+chr[is.na(chr)] <- NA
+
+# Convert character columns to factors
+fac <- chr %>% 
+  lapply(as.factor) %>% 
+  as_tibble()
+
+# Extract numeric columns
+num <- full[, sapply(full, is.numeric)]
+
+# Replace missing values in numeric columns with 0
+num[is.na(num)] <- 0
+
+# Combine processed character and numeric columns
+full <- bind_cols(fac, num)
+
+# Remove temporary variables
+rm(chr, fac, num)
+
+# Separate the combined dataset back into train and test datasets
+train <- full[1:length(Target), ]
+test <- full[(length(Target) + 1):nrow(full), ]
+
+
+```
+
+
+# handling missing values
+
+This code snippet prepares the train and test datasets for machine learning modeling. It combines the datasets and stores the target variable and ID column. Unnecessary columns, such as IDs and targets, are removed, and columns with over 50% missing values are dropped. Missing values in character columns are replaced with NA, while numeric columns' missing values are replaced with 0. Character columns are converted to factors, and all processed columns are merged back into a single dataframe. Finally, the dataframe is split into train and test sets, ready for analysis and modeling.
+
+
+
+# data partition
+
+
+```{r}
+
+set.seed(123)
+inTrain <- createDataPartition(Target, p=.9, list = F)
+
+train_input <- train[inTrain,]
+valid_input <- train[-inTrain,]
+
+train_target <- Target[inTrain]
+valid_target <- Target[-inTrain]
+
+```
+
+This code partitions the data into training and validation sets.
+It sets the seed for reproducibility to 123.
+train_input and valid_input contain the predictors for the training and validation sets, respectively.
+train_target and valid_target contain the corresponding target variables for the training and validation sets.
+
+
+
+
+```{r}
+
+lgb.train <- lgb.Dataset(data.matrix(train_input), label = train_target)
+lgb.valid <- lgb.Dataset(data.matrix(valid_input), label = valid_target)
+
+# Adjusted parameters for maximum accuracy
+params.lgb <- list(
+  objective = "binary",
+  metric = "auc",  # Change metric to binary_error for accuracy
+  min_data_in_leaf = 10,    # Increase min_data_in_leaf for more robustness against noise
+  min_sum_hessian_in_leaf = 50,  # Decrease min_sum_hessian_in_leaf for more aggressive splitting
+  feature_fraction = 1,   # Keep feature_fraction as is
+  bagging_fraction = 1,   # Keep bagging_fraction as is
+  bagging_freq = 0,         # Increase bagging_freq for more randomness
+  learning_rate = 0.01,      # Increase learning_rate for faster convergence
+  num_leaves = 15,          # Increase num_leaves for more complex trees
+  num_threads = 2           # Keep num_threads as is
+)
+
+# Train the LightGBM model with validation dataset
+lgb.model <- lgb.train(
+  params = params.lgb,
+  data = lgb.train,
+  valids = list(val = lgb.valid),  # Specify validation dataset
+  nrounds = 3000,
+  early_stopping_rounds = 200,
+  eval_freq = 50
+)
+
+```
+
+
+
+The above code trains a LightGBM model using the training dataset train_input and corresponding target labels train_target.
+The validation dataset valid_input and its labels valid_target are used for model evaluation during training.
+Parameters such as min_data_in_leaf, min_sum_hessian_in_leaf, learning_rate, and num_leaves are adjusted to maximize accuracy.
+The model is trained with early stopping criteria to prevent overfitting, and the best iteration is selected based on the validation set's performance.
+
+
+
+```{r}
+
+print(class(lgb.model))
+
+
+```
+
+
+# Making Predictions with LightGBM Model
+
+
+```{r}
+
+# make test predictions
+lgb_pred <- predict(lgb.model, data.matrix(test), num_iteration = lgb.model$best_iter)
+
+result <- data.frame(SK_ID_CURR = Id, TARGET = lgb_pred)
+
+print(result)
+
+write.csv(result, "LGBM.csv", row.names = FALSE)
+
+```
+
+
+This code predicts the target variable using a trained LightGBM model on the test dataset. It then combines the predictions with the SK_ID_CURR column to give result.
+
+
+
+
+
+
+
+
